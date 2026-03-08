@@ -1,0 +1,64 @@
+# NarnUSD Subgraph Schema
+
+type Protocol @entity(immutable: false) {
+  id: ID! # singleton "1"
+  totalSupply: BigDecimal!
+  totalBurned: BigDecimal!
+  agentCount: BigInt!
+  transferCount: BigInt!
+  burnCount: BigInt!
+}
+
+type Account @entity(immutable: false) {
+  id: Bytes! # address
+  balance: BigDecimal!
+  isAgent: Boolean!
+  creditTier: Int!
+  totalTransactions: BigInt!
+  totalVolumeTransferred: BigDecimal!
+  firstTransactionTime: BigInt!
+  lastTransactionTime: BigInt!
+  consecutiveWeeksActive: Int!
+  transfersFrom: [Transfer!]! @derivedFrom(field: "from")
+  transfersTo: [Transfer!]! @derivedFrom(field: "to")
+  burns: [AutoBurn!]! @derivedFrom(field: "from")
+}
+
+type Transfer @entity(immutable: true) {
+  id: Bytes! # tx hash + log index
+  from: Account!
+  to: Account!
+  value: BigDecimal!
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type AutoBurn @entity(immutable: true) {
+  id: Bytes! # tx hash + log index
+  from: Account!
+  amount: BigDecimal!
+  totalBurnedCumulative: BigDecimal!
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type CreditProfileUpdate @entity(immutable: true) {
+  id: Bytes! # tx hash + log index
+  account: Account!
+  totalTx: BigInt!
+  totalVol: BigDecimal!
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type AgentChange @entity(immutable: true) {
+  id: Bytes! # tx hash + log index
+  account: Account!
+  status: Boolean!
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}

@@ -1,0 +1,37 @@
+[
+  {
+    "type": "event",
+    "name": "Transfer",
+    "inputs": [
+      { "name": "from", "type": "address", "indexed": true },
+      { "name": "to", "type": "address", "indexed": true },
+      { "name": "value", "type": "uint256", "indexed": false }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "AutoBurned",
+    "inputs": [
+      { "name": "from", "type": "address", "indexed": true },
+      { "name": "amount", "type": "uint256", "indexed": false },
+      { "name": "totalBurnedCumulative", "type": "uint256", "indexed": false }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "CreditProfileUpdated",
+    "inputs": [
+      { "name": "account", "type": "address", "indexed": true },
+      { "name": "totalTx", "type": "uint64", "indexed": false },
+      { "name": "totalVol", "type": "uint128", "indexed": false }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "AgentRegistered",
+    "inputs": [
+      { "name": "account", "type": "address", "indexed": true },
+      { "name": "status", "type": "bool", "indexed": false }
+    ]
+  }
+]
