@@ -1,0 +1,45 @@
+version: "3.9"
+
+services:
+  api:
+    build: ./api
+    ports:
+      - "3001:3001"
+    environment:
+      - RPC_URL=${RPC_URL:-https://eth-sepolia.g.alchemy.com/v2/YOUR_KEY}
+      - PORT=3001
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  app:
+    build: ./app
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://api:3001
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  nexus-ai:
+    build: ./nexus-ai
+    ports:
+      - "8000:8000"
+    environment:
+      - NARNUSD_API_URL=http://api:3001
+      - DATABASE_URL=sqlite+aiosqlite:///data/nexus_scores.db
+      - SCORING_INTERVAL=${SCORING_INTERVAL:-300}
+    volumes:
+      - nexus-data:/app/data
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  nexus-data:

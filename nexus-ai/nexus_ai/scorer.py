@@ -8,6 +8,7 @@ The scoring formula is a simple weighted sum for now. The AI model layer
 (e.g. an XGBoost or transformer-based model) replaces `compute_score()` later.
 """
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -16,21 +17,78 @@ from sqlalchemy import select
 
 from .config import NARNUSD_API_URL, SCORING_WEIGHTS
 from .models import CreditScore, async_session
+from .subgraph import fetch_accounts_from_subgraph, is_subgraph_available
 
 logger = logging.getLogger("nexus_ai.scorer")
 
+MAX_RETRIES = 3
+RETRY_BACKOFF = 2  # seconds, multiplied by attempt number
+
+
+async def _fetch_with_retry(client: httpx.AsyncClient, method: str, url: str, **kwargs) -> httpx.Response:
+    """Fetch with exponential backoff retry."""
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            resp = await getattr(client, method)(url, **kwargs)
+            resp.raise_for_status()
+            return resp
+        except (httpx.HTTPStatusError, httpx.ConnectError, httpx.ReadTimeout) as e:
+            if attempt == MAX_RETRIES:
+                raise
+            wait = RETRY_BACKOFF * attempt
+            logger.warning(f"Retry {attempt}/{MAX_RETRIES} for {url} after {wait}s: {e}")
+            await asyncio.sleep(wait)
+    raise RuntimeError("unreachable")
+
+
+async def _fetch_from_subgraph() -> "list[dict] | None":
+    """Try to fetch account data from the subgraph (preferred source)."""
+    if not await is_subgraph_available():
+        return None
+
+    accounts = await fetch_accounts_from_subgraph(first=100, min_tx=0)
+    if not accounts:
+        return None
+
+    # Convert subgraph format → credit profile format used by compute_score()
+    profiles = []
+    for a in accounts:
+        profiles.append({
+            "address": a["id"],
+            "balance": a.get("balance", "0"),
+            "isAgent": a.get("isAgent", False),
+            "creditTier": a.get("creditTier", 0),
+            "creditProfile": {
+                "totalTransactions": int(a.get("totalTransactions", 0)),
+                "totalVolumeTransferred": a.get("totalVolumeTransferred", "0"),
+                "firstTransactionTime": int(a.get("firstTransactionTime", 0)),
+                "lastTransactionTime": int(a.get("lastTransactionTime", 0)),
+                "consecutiveWeeksActive": int(a.get("consecutiveWeeksActive", 0)),
+                "lastActiveWeek": 0,
+            },
+            "yield": {"gross": "0", "fee": "0", "net": "0"},
+            "isWhitelisted": True,
+            "feeRate": 0,
+        })
+    logger.info(f"Fetched {len(profiles)} accounts from subgraph")
+    return profiles
+
 
 async def _fetch_all_profiles() -> list[dict]:
-    """Fetch credit profiles for all known accounts via the batch endpoint."""
+    """Fetch credit profiles — tries subgraph first, falls back to API."""
+    # Try subgraph first
+    subgraph_profiles = await _fetch_from_subgraph()
+    if subgraph_profiles:
+        return subgraph_profiles
+
+    logger.info("Subgraph unavailable, falling back to API")
     async with httpx.AsyncClient(timeout=30) as client:
         # Step 1: get agents list (these are the accounts we know about)
-        agents_resp = await client.get(f"{NARNUSD_API_URL}/api/agents")
-        agents_resp.raise_for_status()
+        agents_resp = await _fetch_with_retry(client, "get", f"{NARNUSD_API_URL}/api/agents")
         agent_addresses = agents_resp.json().get("agents", [])
 
         # Step 2: get recent event addresses (capture accounts that aren't agents)
-        events_resp = await client.get(f"{NARNUSD_API_URL}/api/events?limit=500")
-        events_resp.raise_for_status()
+        events_resp = await _fetch_with_retry(client, "get", f"{NARNUSD_API_URL}/api/events?limit=500")
         events = events_resp.json()
 
         seen = set(agent_addresses)
@@ -46,11 +104,11 @@ async def _fetch_all_profiles() -> list[dict]:
             return []
 
         # Step 3: batch fetch credit profiles
-        batch_resp = await client.post(
+        batch_resp = await _fetch_with_retry(
+            client, "post",
             f"{NARNUSD_API_URL}/api/credit/batch",
-            json={"addresses": addresses[:50]},  # API max is 50
+            json={"addresses": addresses[:50]},
         )
-        batch_resp.raise_for_status()
         return batch_resp.json()
 
 

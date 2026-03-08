@@ -1,5 +1,6 @@
-import express from "express";
+import express, { type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
+import rateLimit from "express-rate-limit";
 import { type Address, isAddress } from "viem";
 
 import { PORT } from "./config.js";
@@ -9,6 +10,16 @@ import { startIndexer, getEvents, getEventCount, getAgentList } from "./indexer.
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// Rate limiting — 100 requests per minute per IP
+const limiter = rateLimit({
+  windowMs: 60_000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later" },
+});
+app.use(limiter);
 
 // Health check
 app.get("/api/health", (_req, res) => {
@@ -88,6 +99,12 @@ app.get("/api/events", (req, res) => {
 // Event counts
 app.get("/api/events/count", (_req, res) => {
   res.json(getEventCount());
+});
+
+// Global error handler
+app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+  console.error(`[error] ${err.message}`);
+  res.status(500).json({ error: "Internal server error" });
 });
 
 // Start
