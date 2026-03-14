@@ -6,6 +6,7 @@ import { type Address, isAddress } from "viem";
 import { PORT } from "./config.js";
 import { getEcosystemMetrics, getCreditProfile, getAgentStatus } from "./blockchain.js";
 import { startIndexer, getEvents, getEventCount, getAgentList } from "./indexer.js";
+import { searchSoChain, getBalance, getAddressSummary, getTransactions, getBlock, isValidNetwork, type SoChainNetwork } from "./sochain.js";
 
 const app = express();
 app.use(cors());
@@ -101,6 +102,83 @@ app.get("/api/events/count", (_req, res) => {
   res.json(getEventCount());
 });
 
+// ——— SoChain blockchain search endpoints ———
+
+// Unified search (address or block height)
+app.get("/api/sochain/search/:network/:query", async (req, res) => {
+  const { network, query } = req.params;
+  if (!isValidNetwork(network)) {
+    return res.status(400).json({ error: `Invalid network. Supported: BTC, LTC, DOGE, BTCTEST, LTCTEST, DOGETEST` });
+  }
+  try {
+    const result = await searchSoChain(network.toUpperCase() as SoChainNetwork, query);
+    res.json(result);
+  } catch (err: any) {
+    res.status(502).json({ error: `SoChain: ${err.message}` });
+  }
+});
+
+// Address balance
+app.get("/api/sochain/balance/:network/:address", async (req, res) => {
+  const { network, address } = req.params;
+  if (!isValidNetwork(network)) {
+    return res.status(400).json({ error: "Invalid network" });
+  }
+  try {
+    const data = await getBalance(network.toUpperCase() as SoChainNetwork, address);
+    res.json(data);
+  } catch (err: any) {
+    res.status(502).json({ error: `SoChain: ${err.message}` });
+  }
+});
+
+// Address summary
+app.get("/api/sochain/address/:network/:address", async (req, res) => {
+  const { network, address } = req.params;
+  if (!isValidNetwork(network)) {
+    return res.status(400).json({ error: "Invalid network" });
+  }
+  try {
+    const data = await getAddressSummary(network.toUpperCase() as SoChainNetwork, address);
+    res.json(data);
+  } catch (err: any) {
+    res.status(502).json({ error: `SoChain: ${err.message}` });
+  }
+});
+
+// Address transactions (paginated)
+app.get("/api/sochain/transactions/:network/:address", async (req, res) => {
+  const { network, address } = req.params;
+  const page = Math.max(1, Number(req.query.page) || 1);
+  if (!isValidNetwork(network)) {
+    return res.status(400).json({ error: "Invalid network" });
+  }
+  try {
+    const data = await getTransactions(network.toUpperCase() as SoChainNetwork, address, page);
+    res.json(data);
+  } catch (err: any) {
+    res.status(502).json({ error: `SoChain: ${err.message}` });
+  }
+});
+
+// Block info
+app.get("/api/sochain/block/:network/:height", async (req, res) => {
+  const { network, height } = req.params;
+  if (!isValidNetwork(network)) {
+    return res.status(400).json({ error: "Invalid network" });
+  }
+  const blockHeight = Number(height);
+  if (isNaN(blockHeight) || blockHeight < 0) {
+    return res.status(400).json({ error: "Invalid block height" });
+  }
+  try {
+    const data = await getBlock(network.toUpperCase() as SoChainNetwork, blockHeight);
+    res.json(data);
+  } catch (err: any) {
+    res.status(502).json({ error: `SoChain: ${err.message}` });
+  }
+});
+
 // Global error handler
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   console.error(`[error] ${err.message}`);
@@ -121,6 +199,11 @@ async function main() {
     console.log(`  GET  /api/agents/:address`);
     console.log(`  GET  /api/events?type=AutoBurned&limit=50`);
     console.log(`  GET  /api/events/count`);
+    console.log(`  GET  /api/sochain/search/:network/:query`);
+    console.log(`  GET  /api/sochain/balance/:network/:address`);
+    console.log(`  GET  /api/sochain/address/:network/:address`);
+    console.log(`  GET  /api/sochain/transactions/:network/:address?page=1`);
+    console.log(`  GET  /api/sochain/block/:network/:height`);
   });
 }
 
